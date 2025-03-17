@@ -5,52 +5,59 @@ const llmTool = require('../tools/llmTool');
 const nodes = {
   parseInput: async (state) => {
     const input = state.inputText.toLowerCase();
-    const vinMatch = input.match(/vin[\w\d]+/);
-    const rnMatch = input.match(/rn[\w\d]+/);
+    const vinMatches = input.match(/vin[\w\d]+/g) || [];
+    const rnMatches = input.match(/rn[\w\d]+/g) || [];
 
-    if (vinMatch) {
-      state.extractedValue = vinMatch[0].replace('vin', '');
-      state.valueType = 'vin';
-    } else if (rnMatch) {
-      state.extractedValue = rnMatch[0].replace('rn', '');
-      state.valueType = 'rn';
-    } else if (input.includes('vin')) {
-      state.valueType = 'vin';
-      state.responseMessage = await llmTool.clarifyInput(input, 'vin');
-    } else if (input.includes('rn')) {
-      state.valueType = 'rn';
-      state.responseMessage = await llmTool.clarifyInput(input, 'rn');
-    } else {
-      state.responseMessage = await llmTool.clarifyInput(input, null);
+    state.extractedValues = [
+      ...rnMatches.map((rn) => rn.replace('rn', '')),
+      ...vinMatches.map((vin) => vin.replace('vin', '')),
+    ];
+    state.valueTypes = [
+      ...rnMatches.map(() => 'rn'),
+      ...vinMatches.map(() => 'vin'),
+    ];
+
+    if (state.extractedValues.length === 0) {
+      if (input.includes('vin')) {
+        state.responseMessage = await llmTool.clarifyInput(input, 'vin');
+      } else if (input.includes('rn')) {
+        state.responseMessage = await llmTool.clarifyInput(input, 'rn');
+      } else {
+        state.responseMessage = await llmTool.clarifyInput(input, null);
+      }
     }
     return state;
   },
 
   fetchConfig: async (state) => {
-    if (!state.extractedValue || state.responseMessage) return state; // Skip if clarification needed
+    if (state.extractedValues.length === 0 || state.responseMessage) return state;
 
     try {
-      if (state.valueType === 'rn') {
-        state.configurations = await configTool.getConfigByRN(state.extractedValue);
-      } else if (state.valueType === 'vin') {
-        state.configurations = await configTool.getConfigByVIN(state.extractedValue);
-      }
+      const fetchPromises = state.valueTypes.map((type, i) =>
+        type === 'rn'
+          ? configTool.getConfigByRN(state.extractedValues[i])
+          : configTool.getConfigByVIN(state.extractedValues[i])
+      );
+      state.configurations = await Promise.all(fetchPromises);
     } catch (error) {
-      state.responseMessage = `Failed to fetch configuration: ${error.message}`;
+      state.responseMessage = `Failed to fetch configurations: ${error.message}`;
     }
     return state;
   },
 
   validateConfig: async (state) => {
-    if (!state.configurations || state.responseMessage) return state; // Skip if no config or clarification sent
+    if (state.configurations.length === 0 || state.responseMessage) return state;
 
     try {
-      state.isValid = await validationTool.validateConfig(state.configurations);
+      const validatePromises = state.configurations.map((config) =>
+        validationTool.validateConfig(config)
+      );
+      state.isValid = await Promise.all(validatePromises);
       state.responseMessage = await llmTool.explainResponse(
         state.configurations,
         state.isValid,
-        state.valueType,
-        state.extractedValue
+        state.valueTypes,
+        state.extractedValues
       );
     } catch (error) {
       state.responseMessage = `Validation or explanation failed: ${error.message}`;

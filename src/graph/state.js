@@ -1,11 +1,12 @@
 class AppState {
   constructor() {
-    this.inputText = null;
-    this.extractedValue = null;
-    this.valueType = null;
-    this.configurations = null;
-    this.isValid = null;
-    this.responseMessage = null;
+    this.inputText = null;          // Raw user input
+    this.extractedValues = [];      // Array of extracted RN or VIN values
+    this.valueTypes = [];           // Array of 'rn' or 'vin' types
+    this.configurations = [];       // Array of configuration objects from API
+    this.isValid = [];              // Array of validation results
+    this.responseMessage = null;    // Plain English response
   }
 }
+
 module.exports = AppState;

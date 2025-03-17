@@ -2,16 +2,16 @@ const { StructuredTool } = require('@langchain/core/tools');
 const { z } = require('zod');
 
 const llmSchema = z.object({
-  configurations: z
-    .object({
+  configurations: z.array(
+    z.object({
       rn: z.string().optional(),
       vin: z.string().optional(),
       config: z.string().optional(),
     })
-    .describe('The configuration object'),
-  isValid: z.boolean().describe('Whether the configuration is valid'),
-  valueType: z.string().describe('Type of input (rn or vin)'),
-  extractedValue: z.string().describe('The extracted RN or VIN value'),
+  ).describe('Array of configuration objects'),
+  isValid: z.array(z.boolean()).describe('Array of validation results'),
+  valueTypes: z.array(z.string()).describe('Array of input types (rn or vin)'),
+  extractedValues: z.array(z.string()).describe('Array of extracted RN or VIN values'),
 });
 
 const clarifySchema = z.object({
@@ -23,15 +23,20 @@ class LLMTool {
   constructor() {
     this.explainResponse = new StructuredTool({
       name: 'explainResponse',
-      description: 'Generates a plain English explanation of a configuration and its validation result.',
+      description: 'Generates a plain English explanation of multiple configuration and validation results.',
       schema: llmSchema,
-      async call({ configurations, isValid, valueType, extractedValue }) {
-        const configDesc = configurations.config || "no detailed configuration available";
-        if (isValid) {
-          return `The configuration for ${valueType.toUpperCase()} ${extractedValue} is valid. Here's what it looks like: ${configDesc}.`;
-        } else {
-          return `The configuration for ${valueType.toUpperCase()} ${extractedValue} is invalid. It seems the retrieved configuration (${configDesc}) doesn't meet the required criteria.`;
-        }
+      async call({ configurations, isValid, valueTypes, extractedValues }) {
+        const responses = configurations.map((config, i) => {
+          const configDesc = config.config || "no detailed configuration available";
+          const type = valueTypes[i].toUpperCase();
+          const value = extractedValues[i];
+          if (isValid[i]) {
+            return `The configuration for ${type} ${value} is valid. Here's what it looks like: ${configDesc}.`;
+          } else {
+            return `The configuration for ${type} ${value} is invalid. It seems the retrieved configuration (${configDesc}) doesn't meet the required criteria.`;
+          }
+        });
+        return responses.join(' ');
       },
     });
 
@@ -51,8 +56,8 @@ class LLMTool {
     });
   }
 
-  async explainResponse(configurations, isValid, valueType, extractedValue) {
-    return this.explainResponse.call({ configurations, isValid, valueType, extractedValue });
+  async explainResponse(configurations, isValid, valueTypes, extractedValues) {
+    return this.explainResponse.call({ configurations, isValid, valueTypes, extractedValues });
   }
 
   async clarifyInput(inputText, valueType) {
